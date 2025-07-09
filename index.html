@@ -7,8 +7,15 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet"/>
+    <link 
+      rel="stylesheet" 
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""></script>
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
     <link href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" rel="stylesheet"/>
     <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
@@ -51,6 +58,32 @@
             'TAS': ['Gorse', 'Broom', 'Willows', 'Holly', 'Spanish heath'],
             'NT': ['Gamba grass', 'Parkinsonia', 'Rubber vine', 'Pond apple', 'Mimosa pigra']
         };
+
+        // Error Boundary Component
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false };
+            }
+
+            static getDerivedStateFromError(error) {
+                return { hasError: true };
+            }
+
+            componentDidCatch(error, errorInfo) {
+                console.error("Error caught by boundary:", error, errorInfo);
+            }
+
+            render() {
+                if (this.state.hasError) {
+                    return <div className="p-4 bg-red-100 text-red-800">
+                        <h3>Something went wrong</h3>
+                        <p>Please try refreshing the page or going back.</p>
+                    </div>;
+                }
+                return this.props.children;
+            }
+        }
 
         // Main App Component
         function App() {
@@ -316,7 +349,7 @@
                 if (currentStep === 4) { // Recommendations step
                     generateRecommendations();
                 }
-            }, [currentStep]);
+            }, [currentStep, formData.problems, formData.property.features, formData.property.state]);
 
             const renderStep = () => {
                 switch(currentStep) {
@@ -401,7 +434,9 @@
                         </div>
                         
                         {/* Main content */}
-                        {renderStep()}
+                        <ErrorBoundary>
+                            {renderStep()}
+                        </ErrorBoundary>
                     </div>
                     
                     <footer className="bg-gray-100 p-4 border-t">
@@ -995,22 +1030,23 @@
             const [zoneType, setZoneType] = useState('management');
             const [zoneNotes, setZoneNotes] = useState('');
             const [editingZone, setEditingZone] = useState(null);
+            const [mapInitialized, setMapInitialized] = useState(false);
             const mapRef = useRef(null);
             
             // Initialize map
             useEffect(() => {
-                if (!map && mapRef.current) {
-                    const newMap = L.map(mapRef.current).setView([-35.0, 149.0], 10);
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                if (!mapInitialized && mapRef.current && window.L) {
+                    const newMap = window.L.map(mapRef.current).setView([-35.0, 149.0], 10);
+                    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     }).addTo(newMap);
                     
                     // Initialize the FeatureGroup to store editable layers
-                    const items = new L.FeatureGroup();
+                    const items = new window.L.FeatureGroup();
                     newMap.addLayer(items);
                     
                     // Add draw control
-                    const drawControl = new L.Control.Draw({
+                    const drawControl = new window.L.Control.Draw({
                         edit: {
                             featureGroup: items,
                             edit: false // Disable editing for now
@@ -1037,7 +1073,7 @@
                     newMap.addControl(drawControl);
                     
                     // Handle created shapes
-                    newMap.on(L.Draw.Event.CREATED, (e) => {
+                    newMap.on(window.L.Draw.Event.CREATED, (e) => {
                         const layer = e.layer;
                         items.addLayer(layer);
                         
@@ -1062,6 +1098,7 @@
                     
                     setMap(newMap);
                     setDrawnItems(items);
+                    setMapInitialized(true);
                 }
                 
                 // Cleanup on unmount
@@ -1070,7 +1107,7 @@
                         map.remove();
                     }
                 };
-            }, []);
+            }, [mapInitialized, zoneType, zoneName]);
             
             // Add existing zones to map when they change
             useEffect(() => {
@@ -1080,7 +1117,7 @@
                     
                     // Add each zone as a layer
                     zones.forEach((zone, index) => {
-                        const layer = L.geoJSON(zone.coordinates);
+                        const layer = window.L.geoJSON(zone.coordinates);
                         
                         // Style based on zone type
                         const colors = {
@@ -1151,7 +1188,7 @@
                     window.editZone = undefined;
                     window.deleteZone = undefined;
                 };
-            }, [zones, removeZone]);
+            }, [zones, removeZone, drawnItems]);
             
             const saveZone = () => {
                 if (drawnItems && zoneName) {
@@ -1159,6 +1196,11 @@
                     if (layers.length > 0) {
                         const latestLayer = layers[layers.length - 1];
                         
+                        if (!latestLayer.toGeoJSON) {
+                            alert('Error: Map data not ready. Please try drawing your zone again.');
+                            return;
+                        }
+
                         const zone = {
                             name: zoneName,
                             type: zoneType,
@@ -1176,7 +1218,11 @@
                         // Reset form
                         setZoneName('');
                         setZoneNotes('');
+                    } else {
+                        alert('Please draw a zone on the map first');
                     }
+                } else {
+                    alert('Please provide a zone name');
                 }
             };
             
