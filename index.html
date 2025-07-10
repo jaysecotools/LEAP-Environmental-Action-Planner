@@ -1024,140 +1024,91 @@
         );
     }
 
-    // Map Tool Component
-    function MapTool({ zones, addZone, updateZone, removeZone, propertyName, location }) {
-        const [map, setMap] = useState(null);
-        const [drawnItems, setDrawnItems] = useState(null);
-        const [zoneName, setZoneName] = useState('');
-        const [zoneType, setZoneType] = useState('management');
-        const [zoneNotes, setZoneNotes] = useState('');
-        const [editingZone, setEditingZone] = useState(null);
-        const [mapInitialized, setMapInitialized] = useState(false);
-        const [hasDrawnZone, setHasDrawnZone] = useState(false);
-        const mapRef = useRef(null);
-        
-        // Initialize map
-        useEffect(() => {
-            if (!mapInitialized && mapRef.current && window.L) {
-                const newMap = window.L.map(mapRef.current).setView([-35.0, 149.0], 10);
-                window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                }).addTo(newMap);
-                
-                // Initialize the FeatureGroup to store editable layers
-                const items = new window.L.FeatureGroup();
-                newMap.addLayer(items);
-                
-                // Add draw control
-                const drawControl = new window.L.Control.Draw({
-                    edit: {
-                        featureGroup: items,
-                        edit: false
-                    },
-                    draw: {
-                        polygon: {
-                            allowIntersection: false,
-                            drawError: {
-                                color: '#e1e100',
-                                message: '<strong>Error:<strong> shape edges cannot cross!'
-                            },
-                            shapeOptions: {
-                                color: '#3388ff',
-                                fillOpacity: 0.2
-                            }
-                        },
-                        rectangle: true,
-                        circle: false,
-                        marker: false,
-                        circlemarker: false,
-                        polyline: false
-                    }
-                });
-                newMap.addControl(drawControl);
-                
-                // Handle created shapes
-                newMap.on(window.L.Draw.Event.CREATED, (e) => {
-                    const layer = e.layer;
-                    items.addLayer(layer);
-                    setHasDrawnZone(true);
-                    
-                    const colors = {
-                        management: '#3388ff',
-                        problem: '#ff0000',
-                        sensitive: '#33cc33',
-                        other: '#ffcc00'
-                    };
-                    
-                    layer.setStyle({
-                        color: colors[zoneType] || '#3388ff',
-                        fillColor: colors[zoneType] || '#3388ff',
-                        fillOpacity: 0.2,
-                        weight: 2
-                    });
-                    
-                    layer.bindPopup(`<b>${zoneName || 'Unnamed zone'}</b><br>Type: ${zoneType}`);
-                });
-                
-                setMap(newMap);
-                setDrawnItems(items);
-                setMapInitialized(true);
-            }
+// Map Tool Component
+function MapTool({ zones, addZone, updateZone, removeZone, propertyName, location }) {
+    const mapRef = useRef(null);
+    const mapInstance = useRef(null);
+    const drawnItemsRef = useRef(null);
+    const drawControlRef = useRef(null);
+    
+    const [zoneName, setZoneName] = useState('');
+    const [zoneType, setZoneType] = useState('management');
+    const [zoneNotes, setZoneNotes] = useState('');
+    const [editingZone, setEditingZone] = useState(null);
+    const [hasDrawnZone, setHasDrawnZone] = useState(false);
+    const drawnLayerRef = useRef(null);
+    
+    // Initialize map
+    useEffect(() => {
+        if (!mapInstance.current && mapRef.current && window.L) {
+            // Create map instance
+            const map = window.L.map(mapRef.current).setView([-35.0, 149.0], 10);
+            window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
             
-            return () => {
-                if (map) {
-                    map.remove();
+            // Initialize the FeatureGroup to store editable layers
+            const drawnItems = new window.L.FeatureGroup();
+            map.addLayer(drawnItems);
+            drawnItemsRef.current = drawnItems;
+            
+            // Add draw control
+            const drawControl = new window.L.Control.Draw({
+                edit: {
+                    featureGroup: drawnItems,
+                    edit: false
+                },
+                draw: {
+                    polygon: {
+                        allowIntersection: false,
+                        drawError: {
+                            color: '#e1e100',
+                            message: '<strong>Error:</strong> shape edges cannot cross!'
+                        },
+                        shapeOptions: {
+                            color: '#3388ff',
+                            fillOpacity: 0.2
+                        }
+                    },
+                    rectangle: true,
+                    circle: false,
+                    marker: false,
+                    circlemarker: false,
+                    polyline: false
                 }
-            };
-        }, [mapInitialized, zoneType, zoneName]);
-        
-        // Add existing zones to map
-        useEffect(() => {
-            if (map && drawnItems) {
-                drawnItems.clearLayers();
+            });
+            map.addControl(drawControl);
+            drawControlRef.current = drawControl;
+            
+            // Handle created shapes
+            map.on(window.L.Draw.Event.CREATED, (e) => {
+                const layer = e.layer;
+                drawnItems.addLayer(layer);
+                setHasDrawnZone(true);
                 
-                zones.forEach((zone, index) => {
-                    const layer = window.L.geoJSON(zone.coordinates);
-                    
-                    const colors = {
-                        management: '#3388ff',
-                        problem: '#ff0000',
-                        sensitive: '#33cc33',
-                        other: '#ffcc00'
-                    };
-                    
-                    layer.setStyle({
-                        color: colors[zone.type] || '#3388ff',
-                        fillColor: colors[zone.type] || '#3388ff',
-                        fillOpacity: 0.2,
-                        weight: 2
-                    });
-                    
-                    layer.bindPopup(`
-                        <b>${zone.name}</b><br>
-                        Type: ${zone.type}<br>
-                        ${zone.notes ? `Notes: ${zone.notes}` : ''}
-                        <div class="mt-2">
-                            <button onclick="window.editZone(${index})" class="bg-blue-500 text-white px-2 py-1 rounded text-xs">
-                                Edit
-                            </button>
-                            <button onclick="window.deleteZone(${index})" class="bg-red-500 text-white px-2 py-1 rounded text-xs ml-1">
-                                Delete
-                            </button>
-                        </div>
-                    `);
-                    
-                    drawnItems.addLayer(layer);
+                // Store the drawn layer reference
+                drawnLayerRef.current = layer;
+                
+                const colors = {
+                    management: '#3388ff',
+                    problem: '#ff0000',
+                    sensitive: '#33cc33',
+                    other: '#ffcc00'
+                };
+                
+                layer.setStyle({
+                    color: colors[zoneType] || '#3388ff',
+                    fillColor: colors[zoneType] || '#3388ff',
+                    fillOpacity: 0.2,
+                    weight: 2
                 });
                 
-                if (zones.length > 0) {
-                    map.fitBounds(drawnItems.getBounds());
-                    setHasDrawnZone(true);
-                }
-            }
-        }, [zones, map, drawnItems]);
-        
-        // Expose functions to window for popup buttons
-        useEffect(() => {
+                layer.bindPopup(`<b>${zoneName || 'Unnamed zone'}</b><br>Type: ${zoneType}`);
+            });
+            
+            mapInstance.current = map;
+            
+            // Expose functions to window for popup buttons
             window.editZone = (index) => {
                 setEditingZone(index);
                 const zone = zones[index];
@@ -1181,200 +1132,255 @@
                     setHasDrawnZone(zones.length > 1);
                 }
             };
-            
-            return () => {
-                window.editZone = undefined;
-                window.deleteZone = undefined;
-            };
-        }, [zones, removeZone, drawnItems]);
+        }
         
-        const saveZone = () => {
-            if (!zoneName) {
-                alert('Please provide a zone name');
-                return;
+        return () => {
+            // Cleanup function
+            if (mapInstance.current) {
+                mapInstance.current.off();
+                mapInstance.current.remove();
+                mapInstance.current = null;
             }
             
-            if (!hasDrawnZone && editingZone === null) {
-                alert('Please draw a zone on the map first');
-                return;
-            }
+            // Cleanup window functions
+            window.editZone = undefined;
+            window.deleteZone = undefined;
+        };
+    }, []);
+    
+    // Add existing zones to map
+    useEffect(() => {
+        if (mapInstance.current && drawnItemsRef.current) {
+            drawnItemsRef.current.clearLayers();
             
-            if (editingZone !== null) {
-                const updatedZone = {
+            zones.forEach((zone, index) => {
+                const layer = window.L.geoJSON(zone.coordinates);
+                
+                const colors = {
+                    management: '#3388ff',
+                    problem: '#ff0000',
+                    sensitive: '#33cc33',
+                    other: '#ffcc00'
+                };
+                
+                layer.setStyle({
+                    color: colors[zone.type] || '#3388ff',
+                    fillColor: colors[zone.type] || '#3388ff',
+                    fillOpacity: 0.2,
+                    weight: 2
+                });
+                
+                layer.bindPopup(`
+                    <b>${zone.name}</b><br>
+                    Type: ${zone.type}<br>
+                    ${zone.notes ? `Notes: ${zone.notes}` : ''}
+                    <div class="mt-2">
+                        <button onclick="window.editZone(${index})" class="bg-blue-500 text-white px-2 py-1 rounded text-xs">
+                            Edit
+                        </button>
+                        <button onclick="window.deleteZone(${index})" class="bg-red-500 text-white px-2 py-1 rounded text-xs ml-1">
+                            Delete
+                        </button>
+                    </div>
+                `);
+                
+                drawnItemsRef.current.addLayer(layer);
+            });
+            
+            if (zones.length > 0 && mapInstance.current) {
+                mapInstance.current.fitBounds(drawnItemsRef.current.getBounds());
+                setHasDrawnZone(true);
+            }
+        }
+    }, [zones]);
+    
+    const saveZone = () => {
+        if (!zoneName) {
+            alert('Please provide a zone name');
+            return;
+        }
+        
+        if (!hasDrawnZone && editingZone === null) {
+            alert('Please draw a zone on the map first');
+            return;
+        }
+        
+        if (editingZone !== null) {
+            // Update existing zone
+            const updatedZone = {
+                name: zoneName,
+                type: zoneType,
+                notes: zoneNotes,
+                coordinates: zones[editingZone].coordinates
+            };
+            updateZone(editingZone, updatedZone);
+            setEditingZone(null);
+        } else {
+            // Add new zone
+            if (drawnLayerRef.current && drawnLayerRef.current.toGeoJSON) {
+                const zone = {
                     name: zoneName,
                     type: zoneType,
                     notes: zoneNotes,
-                    coordinates: zones[editingZone].coordinates
+                    coordinates: drawnLayerRef.current.toGeoJSON().geometry
                 };
-                updateZone(editingZone, updatedZone);
-                setEditingZone(null);
-            } else if (drawnItems) {
-                const layers = drawnItems.getLayers();
-                if (layers.length > 0) {
-                    const latestLayer = layers[layers.length - 1];
-                    
-                    if (!latestLayer.toGeoJSON) {
-                        alert('Error: Map data not ready. Please try drawing your zone again.');
-                        return;
-                    }
-
-                    const zone = {
-                        name: zoneName,
-                        type: zoneType,
-                        notes: zoneNotes,
-                        coordinates: latestLayer.toGeoJSON().geometry
-                    };
-                    
-                    addZone(zone);
-                }
+                addZone(zone);
+            } else {
+                alert('Please draw a zone on the map first');
+                return;
             }
-            
-            setZoneName('');
-            setZoneNotes('');
-            setHasDrawnZone(false);
-        };
+        }
         
-        const cancelEdit = () => {
-            setEditingZone(null);
-            setZoneName('');
-            setZoneNotes('');
-            setHasDrawnZone(zones.length > 0);
-            
-            if (drawnItems) {
-                drawnItems.eachLayer(layer => {
-                    layer.setStyle({ weight: 2, fillOpacity: 0.2 });
-                });
-            }
-        };
+        // Reset form
+        setZoneName('');
+        setZoneType('management');
+        setZoneNotes('');
+        setHasDrawnZone(false);
+        drawnLayerRef.current = null;
+    };
+    
+    const cancelEdit = () => {
+        setEditingZone(null);
+        setZoneName('');
+        setZoneType('management');
+        setZoneNotes('');
+        setHasDrawnZone(zones.length > 0);
         
-        return (
-            <div className="max-w-6xl mx-auto">
-                <h2 className="text-2xl font-bold mb-6 text-green-800">Map your property zones</h2>
+        if (drawnItemsRef.current) {
+            drawnItemsRef.current.eachLayer(layer => {
+                layer.setStyle({ weight: 2, fillOpacity: 0.2 });
+            });
+        }
+    };
+    
+    return (
+        <div className="max-w-6xl mx-auto">
+            <h2 className="text-2xl font-bold mb-6 text-green-800">Map your property zones</h2>
+            
+            <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+                <p className="mb-6">Draw areas on the map to identify different zones (e.g., weed areas, sensitive ecosystems, planned works). Click on zones to edit or delete them.</p>
                 
-                <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-                    <p className="mb-6">Draw areas on the map to identify different zones (e.g., weed areas, sensitive ecosystems, planned works). Click on zones to edit or delete them.</p>
-                    
-                    <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1 text-gray-700">
-                                Zone name <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                                type="text"
-                                value={zoneName}
-                                onChange={(e) => setZoneName(e.target.value)}
-                                className="w-full p-2 border rounded-lg"
-                                placeholder="e.g., North paddock weeds"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1 text-gray-700">
-                                Zone type
-                            </label>
-                            <select
-                                value={zoneType}
-                                onChange={(e) => setZoneType(e.target.value)}
-                                className="w-full p-2 border rounded-lg"
-                            >
-                                <option value="management">Management area</option>
-                                <option value="problem">Problem area</option>
-                                <option value="sensitive">Sensitive area</option>
-                                <option value="other">Other</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium mb-1 text-gray-700">
-                                Notes (optional)
-                            </label>
-                            <input
-                                type="text"
-                                value={zoneNotes}
-                                onChange={(e) => setZoneNotes(e.target.value)}
-                                className="w-full p-2 border rounded-lg"
-                                placeholder="e.g., High priority area"
-                            />
-                        </div>
-                        <div className="flex items-end space-x-2">
-                            <button
-                                onClick={saveZone}
-                                disabled={!zoneName}
-                                className={`px-4 py-2 rounded-lg flex-1 ${!zoneName ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}
-                            >
-                                {editingZone !== null ? 'Update Zone' : 'Save Zone'}
-                            </button>
-                            {editingZone !== null && (
-                                <button
-                                    onClick={cancelEdit}
-                                    className="px-3 py-2 rounded-lg bg-gray-300 hover:bg-gray-400"
-                                >
-                                    Cancel
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                    
-                    <div ref={mapRef} id="map" className="mb-6 rounded-lg overflow-hidden border border-gray-300"></div>
-                    
+                <div className="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
-                        <h3 className="font-medium mb-3 text-gray-800">Your saved zones:</h3>
-                        {zones.length === 0 ? (
-                            <p className="text-gray-500 p-4 bg-gray-50 rounded-lg">No zones saved yet. Draw on the map, fill in details above, and click "Save Zone".</p>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50">
-                                        <tr>
-                                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notes</th>
-                                            <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-200">
-                                        {zones.map((zone, index) => (
-                                            <tr key={index} className={`${zone.type === 'management' ? 'bg-blue-50' : 
-                                                                       zone.type === 'problem' ? 'bg-red-50' : 
-                                                                       zone.type === 'sensitive' ? 'bg-green-50' : 'bg-yellow-50'}`}>
-                                                <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{zone.name}</td>
-                                                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 capitalize">{zone.type}</td>
-                                                <td className="px-4 py-3 text-sm text-gray-500">{zone.notes || '-'}</td>
-                                                <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
-                                                    <button 
-                                                        onClick={() => {
-                                                            setEditingZone(index);
-                                                            const zone = zones[index];
-                                                            setZoneName(zone.name);
-                                                            setZoneType(zone.type);
-                                                            setZoneNotes(zone.notes || '');
-                                                            setHasDrawnZone(true);
-                                                        }}
-                                                        className="text-blue-600 hover:text-blue-900 mr-3"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => {
-                                                            if (confirm('Are you sure you want to delete this zone?')) {
-                                                                removeZone(index);
-                                                                setHasDrawnZone(zones.length > 1);
-                                                            }
-                                                        }}
-                                                        className="text-red-600 hover:text-red-900"
-                                                    >
-                                                        Delete
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                        <label className="block text-sm font-medium mb-1 text-gray-700">
+                            Zone name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            value={zoneName}
+                            onChange={(e) => setZoneName(e.target.value)}
+                            className="w-full p-2 border rounded-lg"
+                            placeholder="e.g., North paddock weeds"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1 text-gray-700">
+                            Zone type
+                        </label>
+                        <select
+                            value={zoneType}
+                            onChange={(e) => setZoneType(e.target.value)}
+                            className="w-full p-2 border rounded-lg"
+                        >
+                            <option value="management">Management area</option>
+                            <option value="problem">Problem area</option>
+                            <option value="sensitive">Sensitive area</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1 text-gray-700">
+                            Notes (optional)
+                        </label>
+                        <input
+                            type="text"
+                            value={zoneNotes}
+                            onChange={(e) => setZoneNotes(e.target.value)}
+                            className="w-full p-2 border rounded-lg"
+                            placeholder="e.g., High priority area"
+                        />
+                    </div>
+                    <div className="flex items-end space-x-2">
+                        <button
+                            onClick={saveZone}
+                            disabled={!zoneName || (!hasDrawnZone && editingZone === null)}
+                            className={`px-4 py-2 rounded-lg flex-1 ${(!zoneName || (!hasDrawnZone && editingZone === null)) ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`}
+                        >
+                            {editingZone !== null ? 'Update Zone' : 'Save Zone'}
+                        </button>
+                        {editingZone !== null && (
+                            <button
+                                onClick={cancelEdit}
+                                className="px-3 py-2 rounded-lg bg-gray-300 hover:bg-gray-400"
+                            >
+                                Cancel
+                            </button>
                         )}
                     </div>
                 </div>
+                
+                <div ref={mapRef} id="map" className="mb-6 rounded-lg overflow-hidden border border-gray-300"></div>
+                
+                <div>
+                    <h3 className="font-medium mb-3 text-gray-800">Your saved zones:</h3>
+                    {zones.length === 0 ? (
+                        <p className="text-gray-500 p-4 bg-gray-50 rounded-lg">No zones saved yet. Draw on the map, fill in details above, and click "Save Zone".</p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Notes</th>
+                                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {zones.map((zone, index) => (
+                                        <tr key={index} className={`${zone.type === 'management' ? 'bg-blue-50' : 
+                                                                   zone.type === 'problem' ? 'bg-red-50' : 
+                                                                   zone.type === 'sensitive' ? 'bg-green-50' : 'bg-yellow-50'}`}>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{zone.name}</td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500 capitalize">{zone.type}</td>
+                                            <td className="px-4 py-3 text-sm text-gray-500">{zone.notes || '-'}</td>
+                                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                                                <button 
+                                                    onClick={() => {
+                                                        setEditingZone(index);
+                                                        const zone = zones[index];
+                                                        setZoneName(zone.name);
+                                                        setZoneType(zone.type);
+                                                        setZoneNotes(zone.notes || '');
+                                                        setHasDrawnZone(true);
+                                                    }}
+                                                    className="text-blue-600 hover:text-blue-900 mr-3"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button 
+                                                    onClick={() => {
+                                                        if (confirm('Are you sure you want to delete this zone?')) {
+                                                            removeZone(index);
+                                                            setHasDrawnZone(zones.length > 1);
+                                                        }
+                                                    }}
+                                                    className="text-red-600 hover:text-red-900"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
             </div>
-        );
-    }
+        </div>
+    );
+}
 
     // Recommendations Component
     function Recommendations({ recommendations = [], problems }) {
