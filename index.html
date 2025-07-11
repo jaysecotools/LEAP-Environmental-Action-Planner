@@ -71,12 +71,12 @@
             margin-bottom: 6px;
         }
         .pdf-text {
-            color: #4a5568;
+            color: #000000;
             font-size: 12px;
             line-height: 1.5;
         }
         .pdf-list-item {
-            color: #4a5568;
+            color: #000000;
             font-size: 12px;
             margin-left: 15px;
             line-height: 1.5;
@@ -2384,7 +2384,7 @@
                 doc.text('1. Property Details', 20, 20);
                 
                 doc.setFontSize(12);
-                doc.setTextColor(50, 50, 50);
+                doc.setTextColor(0, 0, 0); // Black text
                 doc.text(`Property Name: ${formData.property.name || 'Not specified'}`, 20, 35);
                 doc.text(`Location: ${formData.property.location || 'Not specified'}`, 20, 45);
                 doc.text(`Size: ${formData.property.size || 'Not specified'} hectares`, 20, 55);
@@ -2392,18 +2392,27 @@
                 doc.text(`Rainfall: ${formData.property.rainfall || 'Not specified'}`, 20, 75);
                 doc.text(`Soil Type: ${formData.property.soilType || 'Not specified'}`, 20, 85);
                 
+                // Function to add wrapped text
+                const addWrappedText = (text, x, y, maxWidth, lineHeight = 7) => {
+                    const lines = doc.splitTextToSize(text, maxWidth);
+                    for (let i = 0; i < lines.length; i++) {
+                        if (y > 280) {
+                            doc.addPage();
+                            y = 20;
+                        }
+                        doc.text(lines[i], x, y);
+                        y += lineHeight;
+                    }
+                    return y;
+                };
+
+                // Property features
                 doc.setFont(undefined, 'bold');
                 doc.text('Property Features:', 20, 100);
                 doc.setFont(undefined, 'normal');
                 let featureY = 110;
-                formData.property.features.forEach(feature => {
-                    doc.text(`• ${feature}`, 25, featureY);
-                    featureY += 7;
-                    if (featureY > 280) {
-                        doc.addPage();
-                        featureY = 20;
-                    }
-                });
+                const featuresText = formData.property.features.map(f => `• ${f}`).join('\n');
+                featureY = addWrappedText(featuresText, 25, featureY, 170);
                 
                 // Add problems page
                 doc.addPage();
@@ -2440,8 +2449,9 @@
                 }
                 
                 if (formData.problems.otherProblems) {
-                    doc.text(`• Other concerns: ${formData.problems.otherProblems}`, 20, problemY);
-                    problemY += 7;
+                    const otherProblemsY = problemY + 7;
+                    const wrappedY = addWrappedText(`• Other concerns: ${formData.problems.otherProblems}`, 20, otherProblemsY, 170);
+                    problemY = wrappedY;
                 }
                 
                 // Add management goals
@@ -2451,15 +2461,9 @@
                 
                 doc.setFontSize(12);
                 let goalY = problemY + 30;
-                formData.problems.goals.forEach(goal => {
-                    doc.text(`• ${goal}`, 20, goalY);
-                    goalY += 7;
-                    if (goalY > 280) {
-                        doc.addPage();
-                        goalY = 20;
-                    }
-                });
-                
+                const goalsText = formData.problems.goals.map(g => `• ${g}`).join('\n');
+                goalY = addWrappedText(goalsText, 20, goalY, 170);
+
                 // Add map page if included
                 if (includeMap && formData.mapZones.length > 0) {
                     try {
@@ -2493,14 +2497,23 @@
                         // Capture map image
                         const mapContainer = document.getElementById('map');
                         if (mapContainer) {
+                            // Wait longer for map to render
+                            await new Promise(resolve => setTimeout(resolve, 3000));
+
                             const canvas = await html2canvas(mapContainer, {
                                 useCORS: true,
                                 logging: false,
-                                scale: 1.5
+                                scale: 1.5,
+                                allowTaint: true,
+                                backgroundColor: '#FFFFFF'
                             });
                             
-                            const imgData = canvas.toDataURL('image/jpeg', 0.8);
-                            doc.addImage(imgData, 'JPEG', 20, legendY + 10, 170, 130);
+                            if (canvas.width > 0 && canvas.height > 0) {
+                                const imgData = canvas.toDataURL('image/jpeg', 0.8);
+                                doc.addImage(imgData, 'JPEG', 20, legendY + 10, 170, 130);
+                            } else {
+                                doc.text('Map could not be captured', 20, legendY + 50);
+                            }
                         }
                         
                         // Add zone details
@@ -2611,33 +2624,27 @@
                     doc.setTextColor(30, 90, 50);
                     doc.text(`${rec.title}:`, 20, recY);
                     doc.setFont(undefined, 'normal');
-                    doc.setTextColor(50, 50, 50);
+                    doc.setTextColor(0, 0, 0);
                     recY += 7;
                     
-                    // Add why important
+                    // Why important
                     doc.setFont(undefined, 'bold');
                     doc.text('Why this is important:', 20, recY);
                     doc.setFont(undefined, 'normal');
                     recY += 7;
-                    doc.text(rec.whyImportant, 25, recY, { maxWidth: 170 });
-                    recY += 15;
+                    recY = addWrappedText(rec.whyImportant, 25, recY, 170) + 5;
                     
-                    // Add actions
+                    // Actions
                     doc.setFont(undefined, 'bold');
                     doc.text('Recommended actions:', 20, recY);
                     doc.setFont(undefined, 'normal');
                     recY += 7;
                     
                     rec.actions.forEach(action => {
-                        doc.text(`• ${action}`, 25, recY);
-                        recY += 7;
-                        if (recY > 280) {
-                            doc.addPage();
-                            recY = 20;
-                        }
+                        recY = addWrappedText(`• ${action}`, 25, recY, 170);
                     });
                     
-                    // Add resources if available
+                    // Resources if available
                     if (rec.resources && rec.resources.length > 0) {
                         recY += 5;
                         doc.setFont(undefined, 'bold');
@@ -2691,11 +2698,11 @@
                                 
                             doc.setTextColor(priorityColor[0], priorityColor[1], priorityColor[2]);
                             doc.text(`• ${item.action}`, 25, timeY);
-                            doc.setTextColor(50, 50, 50);
+                            doc.setTextColor(0, 0, 0);
                             doc.text(`Best season: ${item.season}, Priority: ${item.priority}`, 30, timeY + 7);
                             
                             if (item.details) {
-                                doc.text(`Details: ${item.details}`, 30, timeY + 14);
+                                doc.text(`Details: ${item.details}`, 30, timeY + 14, { maxWidth: 160 });
                                 timeY += 14;
                             } else {
                                 timeY += 7;
